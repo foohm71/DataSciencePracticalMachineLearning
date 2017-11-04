@@ -1,0 +1,130 @@
+---
+title: "PracticalMachineLearningProject"
+author: "Heemeng Foo"
+date: "11/3/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Practical Machine Learning Course Project
+The objective of the project is to create a Machine Learning algorithm to properly classify the quality of barbell bicep curls by using data from belt, forearm, arm, and dumbbell monitors. The 5 classifications of this exercise are: (A) the correct form of the exercise, (B) throwing elbows to the front, (C) lifting dumbbell up, (D) lowering dumbbell down and (E) throwing hips to the front.
+
+http://groupware.les.inf.puc-rio.br/har#ixzz3PO5pnm1R
+
+## Setting up libraries
+
+```{r libraries}
+library(caret)
+library(gridExtra)
+```
+
+## Reading in raw data
+```{r data}
+trainingRaw <- read.csv("pml-training.csv")
+testingRaw <- read.csv("pml-testing.csv")
+```
+
+## Cleaning up training and testing data set
+Most of the data are not very useful with a lot of NAs so good idea to subset the data sets, reducing to 52 variables
+
+```{r cleaning}
+trainingSub <- subset(trainingRaw, select = grep("^accel|^total|^roll|^pitch|^yaw|^magnet|^gyro", names(trainingRaw)))
+testingSub <- subset(testingRaw, select = grep("^accel|^total|^roll|^pitch|^yaw|^magnet|^gyro", names(testingRaw)))
+trainingSub$Classe = trainingRaw$classe
+testingSub$problem.id = testingRaw$problem_id
+```
+
+### clearing memory
+
+```{r clearing_memory}
+rm(trainingRaw, testingRaw)
+```
+
+## Creating data partitions within the training data set so that we can perform cross validation
+
+```{r setup_crossvalidation}
+set.seed("999")
+inTrain <- createDataPartition(y=trainingSub$Classe, p=0.7, list=FALSE)
+training <- trainingSub[inTrain,]
+testing <- trainingSub[-inTrain,]
+```
+
+## Decision tree technique
+```{r decision_tree}
+modFit <- train(Classe ~., method="rpart", data=training)
+```
+
+### Analyse model
+```{r analyse_rpart}
+print(modFit$finalModel)
+```
+
+### Plotting partition (using plot as rattle can't install on my box)
+```{r plot}
+plot(modFit$finalModel, uniform = TRUE)
+text(modFit$finalModel, use.n=TRUE, all=TRUE)
+```
+
+### Prediction
+```{r prediction}
+pred <- predict(modFit, testing)
+confusionMatrix(testing$Classe, pred)
+```
+
+Results are not good. Accuracy is under 50% which is worse than a coin toss! 
+
+## Naive Bayes approach
+```{r results='hide'}
+modFit2 <- suppressWarnings(train(Classe ~., method="nb", data=training))
+```
+```{r nbayes_result}
+print(modFit2)
+pred2 <- predict(modFit2, testing)
+confusionMatrix(testing$Classe, pred2)
+```
+Accuracy is encouraging - 76%
+
+## Random Forest technique
+```{r random_forest}
+modFit3 <- train(Classe ~., method="rf", data=training)
+print(modFit3)
+
+pred3 <- predict(modFit3, testing)
+confusionMatrix(testing$Classe, pred3)
+```
+Accuracy is good - 99%, specificity and sensitivity also good - 99%
+
+Most of the errors come with misclassifying C with D. 
+Let's look at which features are most important
+
+```{r feature}
+varImp(modFit3)
+```
+
+If we plot the 3 most important features against each other
+```{r plot1}
+plot1 <- qplot(roll_belt,yaw_belt,colour=Classe,data=testing)
+plot2 <- qplot(roll_belt,pitch_forearm,colour=Classe,data=testing)
+grid.arrange(plot1, plot2, ncol=2)
+```
+As you can see, the 3 most important features do not discriminate C/D very well
+
+## Checking In Sample error
+```{r insample}
+inpred <- predict(modFit3, training)
+confusionMatrix(training$Classe, inpred)
+```
+
+As you can see, the in sample error is extremely low with accuracy of 100% and sensitivity and specificity at 100% for all 3 classes
+With the testing data, the out of sample error is not too bad ie. 99.6%. This will be our final model
+
+```{r final}
+answer <- predict(modFit3, testingSub)
+print(answer)
+```
+
+## Conclusion
+The Random Forest approach was by far the superior technique over both Decision Tree (ie. rpart) and Naive Baysian approaches. 
+Of the 5 classes, C and D are the most difficult to differentiate but Random Forest method gives the best result.
